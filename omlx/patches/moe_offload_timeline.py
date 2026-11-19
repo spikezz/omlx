@@ -34,6 +34,9 @@ SPANS = ("layer", "routing", "ensure", "read", "install", "keepalive", "eval")
 
 PATH = os.environ.get("OMLX_MOE_OFFLOAD_TIMELINE") or None
 ON = PATH is not None
+# Per-tensor read/install spans overflow the cap on a 100K prefill; ensure keeps the wait
+# and its count of missing experts.
+_SKIP = frozenset(filter(None, os.environ.get("OMLX_MOE_OFFLOAD_TIMELINE_SKIP", "").split(",")))
 
 # A 256-token decode at 48 layers with about three misses per layer stays
 # under 150 thousand spans; the cap bounds a prefill that reads every expert.
@@ -48,6 +51,8 @@ now = time.perf_counter_ns
 def record(span: str, layer: int, count: int, start_ns: int) -> None:
     """Close a span that began at ``start_ns``. IO workers call this concurrently."""
     global _dropped
+    if span in _SKIP:
+        return
     end_ns = now()
     with _lock:
         if len(_events) < _CAPACITY:
